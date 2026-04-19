@@ -35,6 +35,36 @@ struct InMemoryStorageTests {
     #expect(true)
   }
 
+  @Test func downloadReturnsInsertedData() async throws {
+    let object = Object(path: "test/file.txt")
+    let testData = "Hello, World!".data(using: .utf8)!
+
+    storage.insert(data: testData, contentType: "text/plain", object: object, in: bucket)
+
+    let downloadedData = try await storage.download(object: object, in: bucket)
+    #expect(downloadedData == testData)
+  }
+
+  @Test func downloadNonexistentObjectThrowsError() async throws {
+    let object = Object(path: "nonexistent/file.txt")
+
+    await #expect(throws: StorageError.self) {
+      try await storage.download(object: object, in: bucket)
+    }
+  }
+
+  @Test func downloadAfterDeleteThrowsError() async throws {
+    let object = Object(path: "test/ephemeral.txt")
+    let testData = "temporary".data(using: .utf8)!
+
+    storage.insert(data: testData, contentType: "text/plain", object: object, in: bucket)
+    storage.delete(object: object, in: bucket)
+
+    await #expect(throws: StorageError.self) {
+      try await storage.download(object: object, in: bucket)
+    }
+  }
+
   @Test func deleteObject() async throws {
     let object = Object(path: "test/delete-me.txt")
     let testData = "To be deleted".data(using: .utf8)!
@@ -105,6 +135,51 @@ struct InMemoryStorageTests {
 
     // All operations should complete without data races or crashes
     #expect(true)
+  }
+
+  @Test func listReturnsEmptyForEmptyBucket() async throws {
+    let emptyBucket = Bucket(name: "empty-bucket")
+    let objects = try await storage.list(in: emptyBucket)
+    #expect(objects.isEmpty)
+  }
+
+  @Test func listReturnsInsertedObjects() async throws {
+    let listBucket = Bucket(name: "list-bucket")
+    let object1 = Object(path: "a/file1.txt")
+    let object2 = Object(path: "b/file2.txt")
+
+    storage.insert(data: Data(), contentType: "text/plain", object: object1, in: listBucket)
+    storage.insert(data: Data(), contentType: "text/plain", object: object2, in: listBucket)
+
+    let listed = try await storage.list(in: listBucket)
+    let paths = listed.map(\.path).sorted()
+
+    #expect(paths == ["a/file1.txt", "b/file2.txt"])
+  }
+
+  @Test func listIsIsolatedToBucket() async throws {
+    let bucketA = Bucket(name: "isolated-bucket-a")
+    let bucketB = Bucket(name: "isolated-bucket-b")
+    let object = Object(path: "shared/path.txt")
+
+    storage.insert(data: Data(), contentType: "text/plain", object: object, in: bucketA)
+
+    let listedA = try await storage.list(in: bucketA)
+    let listedB = try await storage.list(in: bucketB)
+
+    #expect(listedA.map(\.path) == ["shared/path.txt"])
+    #expect(listedB.isEmpty)
+  }
+
+  @Test func listReflectsDeletions() async throws {
+    let deletionBucket = Bucket(name: "deletion-bucket")
+    let object = Object(path: "to-delete.txt")
+
+    storage.insert(data: Data(), contentType: "text/plain", object: object, in: deletionBucket)
+    #expect(try await storage.list(in: deletionBucket).count == 1)
+
+    storage.delete(object: object, in: deletionBucket)
+    #expect(try await storage.list(in: deletionBucket).isEmpty)
   }
 
   @Test func keyGenerationConsistency() async throws {
