@@ -72,7 +72,7 @@ public final class LocalFileSystemStorage: StorageProtocol {
     return try Data(contentsOf: fileURL)
   }
 
-  public func list(in bucket: Bucket) async throws -> [Object] {
+  public func list(in bucket: Bucket, prefix: String? = nil) async throws -> [Object] {
     let bucketURL = bucketURL(for: bucket)
 
     guard FileManager.default.fileExists(atPath: bucketURL.path) else {
@@ -94,8 +94,9 @@ public final class LocalFileSystemStorage: StorageProtocol {
         let resourceValues = try? fileURL.resourceValues(forKeys: [.isRegularFileKey]),
         resourceValues.isRegularFile == true
       else { return nil }
-      let relativePath = fileURL.path.dropFirst(bucketURL.path.count + 1)
-      return Object(path: String(relativePath))
+      let relativePath = String(fileURL.path.dropFirst(bucketURL.path.count + 1))
+      if let prefix, !relativePath.hasPrefix(prefix) { return nil }
+      return Object(path: relativePath)
     }
   }
 

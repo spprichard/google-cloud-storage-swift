@@ -31,12 +31,16 @@ public final class InMemoryStorage: StorageProtocol {
     return data
   }
 
-  public func list(in bucket: Bucket) async throws -> [Object] {
-    let prefix = bucket.name + "/"
+  public func list(in bucket: Bucket, prefix: String? = nil) async throws -> [Object] {
+    let bucketPrefix = bucket.name + "/"
     return objects.withLock { storage in
       storage.keys
-        .filter { $0.hasPrefix(prefix) }
-        .map { Object(path: String($0.dropFirst(prefix.count))) }
+        .filter { $0.hasPrefix(bucketPrefix) }
+        .map { Object(path: String($0.dropFirst(bucketPrefix.count))) }
+        .filter { obj in
+          guard let prefix else { return true }
+          return obj.path.hasPrefix(prefix)
+        }
     }
   }
 

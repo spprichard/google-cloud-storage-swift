@@ -51,14 +51,31 @@ extension Storage {
     }
   }
     
-  public func list(in bucket: Bucket) async throws -> [Object] {
+  public func list(in bucket: Bucket, prefix: String? = nil) async throws -> [Object] {
     try await withSpan("storage-list", ofKind: .client) { span in
       span.attributes["storage/bucket"] = bucket.name
-      let response: ListResponse = try await execute(
-        method: .GET,
-        path: "/storage/v1/b/\(bucket.urlEncoded)/o"
-      )
-      return (response.items ?? []).map { Object(path: $0.name) }
+      if let prefix {
+        span.attributes["storage/prefix"] = prefix
+      }
+      var allObjects: [Object] = []
+      var pageToken: String? = nil
+      repeat {
+        var queryItems: [URLQueryItem] = []
+        if let prefix {
+          queryItems.append(.init(name: "prefix", value: prefix))
+        }
+        if let pageToken {
+          queryItems.append(.init(name: "pageToken", value: pageToken))
+        }
+        let response: ListResponse = try await execute(
+          method: .GET,
+          path: "/storage/v1/b/\(bucket.urlEncoded)/o",
+          queryItems: queryItems.isEmpty ? nil : queryItems
+        )
+        allObjects.append(contentsOf: (response.items ?? []).map { Object(path: $0.name) })
+        pageToken = response.nextPageToken
+      } while pageToken != nil
+      return allObjects
     }
   }
 }
@@ -68,4 +85,5 @@ private struct ListResponse: Decodable {
     let name: String
   }
   let items: [Item]?
+  let nextPageToken: String?
 }
